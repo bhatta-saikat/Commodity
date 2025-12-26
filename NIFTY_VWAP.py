@@ -186,14 +186,14 @@ def app():
         from streamlit_autorefresh import st_autorefresh  # pip install streamlit-autorefresh
 
         # ---- Index Selection ----
-        Commodity_Selection = st.sidebar.selectbox(
-            "Select Commodity for Trade: ",
-            ["CRUDEOIL", "NATURALGAS", "GOLD", "SILVER"],
+        Entry_Selection = st.sidebar.selectbox(
+            "Select ATM/OTM Position: ",
+            ["Morning", "Afternoon", "After-Launch", "Last-Session"],
             index=0,
-            key="Commodity_select"
+            key="Entry_select"
         )
 
-        Candle_Length = 300
+        Candle_Length = 200
 
         # ---- Index Selection ----
         Position_Selection = st.sidebar.selectbox(
@@ -229,32 +229,9 @@ def app():
         # --- Auto-refresh every 10 seconds ---
         count = st_autorefresh(interval=30_000, key="datarefresh")
 
-        # ---- NIFTY 50 Token (Angel One Fixed Token) ---- 
-
-        expiry = Angel_DF.instruments[(Angel_DF.instruments['name']==Commodity_Selection) &  (Angel_DF.instruments['instrumenttype']=='FUTCOM') &  (Angel_DF.instruments['exch_seg']=='MCX')]["expiry"].unique()
-        expiry
-
-        today = datetime.today()
-
-        dates = pd.to_datetime(expiry, format="%d%b%Y")
-        next_expiry = dates[dates > today].min()
-        st.write(f"{Commodity_Selection} " " Next Expiry:", next_expiry.strftime("%d%b%y").upper())
-
-
-        Symbol = (f"{Commodity_Selection}{next_expiry.strftime("%d%b%y").upper()}FUT")
-
-        def get_option_token(symbol):
-            row = Angel_DF.instruments[Angel_DF.instruments["symbol"] == symbol]
-            if row.empty:
-                raise Exception(f"Token not found for {symbol}")
-            return row.iloc[0]["token"]
-
-        Commodity_token = get_option_token(Symbol)
-        #st.write(Commodity_token) 
-
-
-        NIFTY_TOKEN = Commodity_token     # NIFTY 50 Index
-        EXCHANGE = "MCX"
+        # ---- NIFTY 50 Token (Angel One Fixed Token) ----      
+        NIFTY_TOKEN = "26000"      # NIFTY 50 Index
+        EXCHANGE = "NSE"
 
         # ---- Fetch LTP ----
         ltp_data = Angel.smartApi.ltpData(
@@ -278,15 +255,11 @@ def app():
         arrow = "🔺" if change > 0 else "🔻" if change < 0 else "⏺️"  # Up / Down / Neutral
 
         # ---- Display in Streamlit ----
-        st.write(f"📈 {Commodity_Selection} LTP: {LTP:.2f} {arrow}")
-        st.write(f"📍 {Commodity_Selection} Spot Price (ATM): {ATM}")
-        st.write(f"{Commodity_Selection} Change: {change:.2f} {arrow}")
-        st.write(f"{Commodity_Selection} % Change: {pct_change:.2f}% {arrow}")
-
-
-
-
-
+        st.write(f"📈 NIFTY 50 LTP: {LTP:.2f} {arrow}")
+        st.write(f"📍 NIFTY Spot Price (ATM): {ATM}")
+        st.write(f"NIFTY Change: {change:.2f} {arrow}")
+        st.write(f"NIFTY % Change: {pct_change:.2f}% {arrow}")
+        
         import pandas_ta as ta
         def add_indicators(df):
             df["VWAP"] = (df["Close"] * df["Volume"]).cumsum() / df["Volume"].cumsum()
@@ -304,8 +277,8 @@ def app():
         from_date = to_date - timedelta(days=5)
 
         params = {
-            "exchange": "MCX",
-            "symboltoken": Commodity_token,
+            "exchange": "NSE",
+            "symboltoken": "99926000",
             "interval": "THREE_MINUTE",
             "fromdate": from_date.strftime("%Y-%m-%d %H:%M"),
             "todate": to_date.strftime("%Y-%m-%d %H:%M")
@@ -319,280 +292,290 @@ def app():
         NIFTY["Datetime"] = pd.to_datetime(NIFTY["Datetime"])
         NIFTY['Datetime'] = pd.to_datetime(NIFTY['Datetime']).dt.tz_localize(None)
         NIFTY['NIFTY_Change'] = NIFTY['Close'].diff()
-        NIFTY = add_indicators(NIFTY)        
-        #st.write(NIFTY)
+
+        NIFTY = add_indicators(NIFTY)
+        #NIFTY = NIFTY.tail(3)
+        NIFTY
 
 
-        NIFTY1 = NIFTY.tail(Candle_Length).copy()
-        # Ensure datetime
-        NIFTY1["Datetime"] = pd.to_datetime(NIFTY1["Datetime"])
-        # Pre-format datetime for hover (candlestick limitation)
-        dt_text = NIFTY1["Datetime"].dt.strftime("%Y-%m-%d %H:%M")
 
-        # ---------------- PLOT ----------------
-        st.subheader(f"📈 {Commodity_Selection} Candle + EMA + RSI", divider="rainbow")
+        Symbol = 'India VIX'
+        def get_option_token(symbol):
+            row = Angel_DF.instruments[Angel_DF.instruments["symbol"] == symbol]
+            if row.empty:
+                raise Exception(f"Token not found for {symbol}")
+            return row.iloc[0]["token"]
 
-        fig1 = make_subplots(
-            rows=2,
-            cols=1,
-            shared_xaxes=True,
-            vertical_spacing=0.08,
-            row_heights=[0.7, 0.3],
-            subplot_titles=("Price + EMA", "RSI")
+        VIX_token = get_option_token(Symbol)
+        print("INDIA-VIX Token:", VIX_token)
+
+        to_date = datetime.now()
+        from_date = to_date - timedelta(days=5)
+
+        params = {
+            "exchange": "NSE",
+            "symboltoken": VIX_token,
+            "interval": "THREE_MINUTE",
+            "fromdate": from_date.strftime("%Y-%m-%d %H:%M"),
+            "todate": to_date.strftime("%Y-%m-%d %H:%M")
+        }
+
+        data = Angel.smartApi.getCandleData(params)
+        VIX = pd.DataFrame(
+            data["data"],
+            columns=["Datetime", "Open", "High", "Low", "Close", "Volume"]
         )
-
-        # ---------- CANDLESTICK ----------
-        fig1.add_trace(
-            go.Candlestick(
-                x=NIFTY1.index,  # ✅ index-based x-axis
-
-                open=NIFTY1["Open"],
-                high=NIFTY1["High"],
-                low=NIFTY1["Low"],
-                close=NIFTY1["Close"],
-
-                name="Price",
-
-                hoverinfo="text",
-                hovertext=[
-                    f"<b>Date:</b> {d}<br>"
-                    f"<b>Open:</b> {o}<br>"
-                    f"<b>High:</b> {h}<br>"
-                    f"<b>Low:</b> {l}<br>"
-                    f"<b>Close:</b> {c}"
-                    for d, o, h, l, c in zip(
-                        dt_text,
-                        NIFTY1["Open"],
-                        NIFTY1["High"],
-                        NIFTY1["Low"],
-                        NIFTY1["Close"]
-                    )
-                ]
-            ),
-            row=1, col=1
-        )
-
-        # ---------- EMA14 ----------
-        fig1.add_trace(
-            go.Scatter(
-                x=NIFTY1.index,
-                y=NIFTY1["EMA14"],
-                name="EMA14",
-                customdata=dt_text,
-                hovertemplate=
-                    "<b>Date:</b> %{customdata}<br>"
-                    "<b>EMA14:</b> %{y:.2f}<br>"
-                    "<extra></extra>",
-                line=dict(color="cyan", width=2)
-            ),
-            row=1, col=1
-        )
-
-        # ---------- RSI ----------
-        fig1.add_trace(
-            go.Scatter(
-                x=NIFTY1.index,
-                y=NIFTY1["RSI"],
-                name="RSI",
-                customdata=dt_text,
-                hovertemplate=
-                    "<b>Date:</b> %{customdata}<br>"
-                    "<b>RSI:</b> %{y:.2f}<br>"
-                    "<extra></extra>",
-                line=dict(color="orange", width=2)
-            ),
-            row=2, col=1
-        )
-
-        # ---------- RSI LEVELS ----------
-        fig1.add_hline(y=70, row=2, col=1, line_dash="dash", line_color="red")
-        fig1.add_hline(y=30, row=2, col=1, line_dash="dash", line_color="green")
-
-        # ---------- LAYOUT ----------
-        fig1.update_layout(
-            height=750,
-            template="plotly_dark",
-            xaxis_rangeslider_visible=False,
-            hovermode="x unified",   # 🔥 sync crosshair
-            legend=dict(orientation="h", y=1.08)
-        )
-
-        st.plotly_chart(fig1, use_container_width=True)
-        #st.write(NIFTY)
+        VIX["Datetime"] = pd.to_datetime(VIX["Datetime"])
+        VIX['Datetime'] = pd.to_datetime(VIX['Datetime']).dt.tz_localize(None)
+        VIX['VIX_Change'] = VIX['Close'].diff()
+        VIX = add_indicators(VIX)
+        VIX.tail(2)
 
 
+        # ---- Two-column layout ----
+        col1, col2 = st.columns(2)
 
+        # ---- Display in columns ----
+        with col1:
+            NIFTY1 = NIFTY.tail(Candle_Length).copy()
+            # Ensure datetime
+            NIFTY1["Datetime"] = pd.to_datetime(NIFTY1["Datetime"])
+            # Pre-format datetime for hover (candlestick limitation)
+            dt_text = NIFTY1["Datetime"].dt.strftime("%Y-%m-%d %H:%M")
 
+            # ---------------- PLOT ----------------
+            st.subheader("📈 NIFTY50 Candle + EMA + RSI", divider="rainbow")
 
-        import numpy as np
-        import pandas as pd
+            fig1 = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.08,
+                row_heights=[0.7, 0.3],
+                subplot_titles=("Price + EMA", "RSI")
+            )
 
-        # df must have: ['Open','High','Low','Close']
-        # Optional but recommended: Volume, RSI
+            # ---------- CANDLESTICK ----------
+            fig1.add_trace(
+                go.Candlestick(
+                    x=NIFTY1.index,  # ✅ index-based x-axis
 
-        # -----------------------------
-        # 1️⃣ LOG RETURN VOLATILITY
-        # -----------------------------
-        df = NIFTY
-        df['log_return'] = np.log(df['Close'] / df['Close'].shift(1))
-        df['volatility_20'] = df['log_return'].rolling(20).std() * np.sqrt(252)
+                    open=NIFTY1["Open"],
+                    high=NIFTY1["High"],
+                    low=NIFTY1["Low"],
+                    close=NIFTY1["Close"],
 
-        # -----------------------------
-        # 2️⃣ TRUE RANGE & ATR
-        # -----------------------------
-        df['tr1'] = df['High'] - df['Low']
-        df['tr2'] = (df['High'] - df['Close'].shift()).abs()
-        df['tr3'] = (df['Low'] - df['Close'].shift()).abs()
+                    name="Price",
 
-        df['TR'] = df[['tr1', 'tr2', 'tr3']].max(axis=1)
-        df['ATR_14'] = df['TR'].rolling(14).mean()
+                    hoverinfo="text",
+                    hovertext=[
+                        f"<b>Date:</b> {d}<br>"
+                        f"<b>Open:</b> {o}<br>"
+                        f"<b>High:</b> {h}<br>"
+                        f"<b>Low:</b> {l}<br>"
+                        f"<b>Close:</b> {c}"
+                        for d, o, h, l, c in zip(
+                            dt_text,
+                            NIFTY1["Open"],
+                            NIFTY1["High"],
+                            NIFTY1["Low"],
+                            NIFTY1["Close"]
+                        )
+                    ]
+                ),
+                row=1, col=1
+            )
 
-        # -----------------------------
-        # 3️⃣ PARKINSON VOLATILITY (HL)
-        # -----------------------------
-        df['parkinson_vol'] = (
-            (np.log(df['High'] / df['Low']) ** 2)
-            .rolling(20)
-            .mean()
-            / (4 * np.log(2))
-        )
+            # ---------- EMA14 ----------
+            fig1.add_trace(
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["EMA14"],
+                    name="EMA14",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>EMA14:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="cyan", width=2)
+                ),
+                row=1, col=1
+            )
 
-        df['parkinson_vol'] = np.sqrt(df['parkinson_vol']) * np.sqrt(252)
+            # ---------- RSI ----------
+            fig1.add_trace(
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["RSI"],
+                    name="RSI",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>RSI:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="orange", width=2)
+                ),
+                row=2, col=1
+            )
 
-        # -----------------------------
-        # 4️⃣ GARMAN-KLASS VOLATILITY (OHLC)
-        # -----------------------------
-        df['gk_vol'] = (
-            0.5 * (np.log(df['High'] / df['Low']) ** 2)
-            - (2 * np.log(2) - 1) * (np.log(df['Close'] / df['Open']) ** 2)
-        )
+            # ---------- RSI LEVELS ----------
+            fig1.add_hline(y=70, row=2, col=1, line_dash="dash", line_color="red")
+            fig1.add_hline(y=30, row=2, col=1, line_dash="dash", line_color="green")
 
-        df['gk_vol'] = np.sqrt(df['gk_vol'].rolling(20).mean()) * np.sqrt(252)
+            # ---------- LAYOUT ----------
+            fig1.update_layout(
+                height=750,
+                template="plotly_dark",
+                xaxis_rangeslider_visible=False,
+                hovermode="x unified",   # 🔥 sync crosshair
+                legend=dict(orientation="h", y=1.08)
+            )
 
-        # -----------------------------
-        # 5️⃣ BOLLINGER BAND WIDTH
-        # -----------------------------
-        df['SMA20'] = df['Close'].rolling(20).mean()
-        df['BB_std'] = df['Close'].rolling(20).std()
-        df['BB_width'] = (2 * df['BB_std']) / df['SMA20']
+            st.plotly_chart(fig1, use_container_width=True)
+            #st.write(NIFTY)
 
-        # -----------------------------
-        # 6️⃣ RSI VOLATILITY (OPTIONAL)
-        # -----------------------------
-        if 'RSI' in df.columns:
-            df['RSI_vol'] = df['RSI'].rolling(14).std()
-        else:
-            df['RSI_vol'] = np.nan
+        # ---- Display in columns ----
+        with col2:
+            NIFTY1 = VIX.tail(Candle_Length).copy()
+            # Ensure datetime
+            NIFTY1["Datetime"] = pd.to_datetime(NIFTY1["Datetime"])
+            # Pre-format datetime for hover (candlestick limitation)
+            dt_text = NIFTY1["Datetime"].dt.strftime("%Y-%m-%d %H:%M")
 
-        # -----------------------------
-        # 7️⃣ VOLATILITY REGIME
-        # -----------------------------
-        df['vol_regime'] = np.where(
-            df['ATR_14'] > df['ATR_14'].rolling(50).mean(),
-            'HIGH_VOL',
-            'LOW_VOL'
-        )
+            # ---------------- PLOT ----------------
+            st.subheader("📈 VIX Candle + RSI + EMA", divider="rainbow")
 
-        # -----------------------------
-        # 8️⃣ FINAL FEATURE SET
-        # -----------------------------
-        volatility_features = [
-            'volatility_20',
-            'ATR_14',
-            'parkinson_vol',
-            'gk_vol',
-            'BB_width',
-            'RSI_vol',
-            'vol_regime'
-        ]
+            fig1 = make_subplots(
+                rows=2,
+                cols=1,
+                shared_xaxes=True,
+                vertical_spacing=0.08,
+                row_heights=[0.7, 0.3],
+                subplot_titles=("Price + EMA", "RSI")
+            )
 
-        #st.write(df[volatility_features].tail())
+            # ---------- CANDLESTICK ----------
+            fig1.add_trace(
+                go.Candlestick(
+                    x=NIFTY1.index,  # ✅ index-based x-axis
 
-        import numpy as np
-        # -----------------------------
-        # NORMALIZATION FUNCTION
-        # -----------------------------
-        def normalize(series, window=100):
-            rolling_min = series.rolling(window).min()
-            rolling_max = series.rolling(window).max()
-            return (series - rolling_min) / (rolling_max - rolling_min)
+                    open=NIFTY1["Open"],
+                    high=NIFTY1["High"],
+                    low=NIFTY1["Low"],
+                    close=NIFTY1["Close"],
 
-        # -----------------------------
-        # NORMALIZE COMPONENTS
-        # -----------------------------
-        df['ATR_norm'] = normalize(df['ATR_14'])
-        df['Parkinson_norm'] = normalize(df['parkinson_vol'])
-        df['BB_norm'] = normalize(df['BB_width'])
-        df['ReturnVol_norm'] = normalize(df['volatility_20'])
+                    name="Price",
 
-        # -----------------------------
-        # WEIGHTS (Tuned for Index Trading)
-        # -----------------------------
-        W_ATR = 0.35
-        W_PARK = 0.30
-        W_BB = 0.20
-        W_RET = 0.15
+                    hoverinfo="text",
+                    hovertext=[
+                        f"<b>Date:</b> {d}<br>"
+                        f"<b>Open:</b> {o}<br>"
+                        f"<b>High:</b> {h}<br>"
+                        f"<b>Low:</b> {l}<br>"
+                        f"<b>Close:</b> {c}"
+                        for d, o, h, l, c in zip(
+                            dt_text,
+                            NIFTY1["Open"],
+                            NIFTY1["High"],
+                            NIFTY1["Low"],
+                            NIFTY1["Close"]
+                        )
+                    ]
+                ),
+                row=1, col=1
+            )
 
-        # -----------------------------
-        # VOLATILITY SCORE (0–100)
-        # -----------------------------
-        df['Volatility_Score'] = (
-            W_ATR * df['ATR_norm'] +
-            W_PARK * df['Parkinson_norm'] +
-            W_BB * df['BB_norm'] +
-            W_RET * df['ReturnVol_norm']
-        ) * 100
+            # ---------- EMA14 ----------
+            fig1.add_trace(
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["EMA14"],
+                    name="EMA14",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>EMA14:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="yellow", width=2)
+                ),
+                row=1, col=1
+            )
 
-        # -----------------------------
-        # CLEANUP
-        # -----------------------------
-        df['Volatility_Score'] = df['Volatility_Score'].clip(0, 100)
+            # ---------- RSI ----------
+            fig1.add_trace(
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["RSI"],
+                    name="RSI",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>RSI:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="white", width=2)
+                ),
+                row=2, col=1
+            )
 
-        st.subheader(f"{Commodity_Selection} Market Volatility Index:",divider='rainbow')
-        st.write(df[['ATR_14','parkinson_vol','BB_width','volatility_20','Volatility_Score']].tail())
+            # ---------- RSI LEVELS ----------
+            fig1.add_hline(y=70, row=2, col=1, line_dash="dash", line_color="red")
+            fig1.add_hline(y=30, row=2, col=1, line_dash="dash", line_color="green")
 
+            # ---------- LAYOUT ----------
+            fig1.update_layout(
+                height=750,
+                template="plotly_dark",
+                xaxis_rangeslider_visible=False,
+                hovermode="x unified",   # 🔥 sync crosshair
+                legend=dict(orientation="h", y=1.08)
+            )
 
+            st.plotly_chart(fig1, use_container_width=True)
 
+            #st.write(VIX)
 
+        st.subheader('',divider='rainbow')
+        st.subheader('NIFTY CE-PE Graphical Data Analysis:',divider='rainbow')
 
-        st.subheader(f"",divider='rainbow')
-        st.subheader(f"{Commodity_Selection} " " CE/PE Option Trading:",divider='rainbow')
-        expiry = Angel_DF.instruments[(Angel_DF.instruments['name']==Commodity_Selection) &  (Angel_DF.instruments['instrumenttype']=='OPTFUT') &  (Angel_DF.instruments['exch_seg']=='MCX')]["expiry"].unique()
+        expiry = Angel_DF.instruments[(Angel_DF.instruments['name']=='NIFTY') &  (Angel_DF.instruments['instrumenttype']=='OPTIDX') &  (Angel_DF.instruments['exch_seg']=='NFO')]["expiry"].unique()
+        expiry = Angel_DF.instruments[(Angel_DF.instruments['name']=='NIFTY') &  (Angel_DF.instruments['instrumenttype']=='OPTIDX') &  (Angel_DF.instruments['exch_seg']=='NFO')]["expiry"].unique()
         expiry
         today = datetime.today()
         dates = pd.to_datetime(expiry, format="%d%b%Y")
         next_expiry = dates[dates > today].min()
-        st.write(f"{Commodity_Selection} " " FNO Next Expiry:", next_expiry.strftime("%d%b%y").upper())
+        st.write("Next Expiry:", next_expiry.strftime("%d%b%y").upper())
+
+        expiry_next = next_expiry.strftime("%d%b%y").upper()
+        def get_option_symbol(expiry_next, strike, opt_type):
+            return f"NIFTY{expiry_next}{strike}{opt_type}"
+
+        ce_symbol = get_option_symbol(expiry_next, ATM+50, "CE")
+        pe_symbol = get_option_symbol(expiry_next, ATM-50, "PE")
+
+        st.write("Selected CE Symbol:", ce_symbol)
+        st.write("Selected PE Symbol:", pe_symbol)
 
 
-
-        Commodity_Symbol_CE = f"{Commodity_Selection}{next_expiry.strftime("%d%b%y").upper()}{ATM+50}CE"
         def get_option_token(symbol):
-            row = Angel_DF.instruments[Angel_DF.instruments["symbol"] == symbol]
+            row = Angel_DF.instruments[ Angel_DF.instruments["symbol"] == symbol]
             if row.empty:
                 raise Exception(f"Token not found for {symbol}")
             return row.iloc[0]["token"]
-        Commodity_token_CE = get_option_token(Commodity_Symbol_CE)
-        st.write(f"{Symbol} " " Token Is:", Commodity_token_CE)
+
+        ce_token = get_option_token(ce_symbol)
+        pe_token = get_option_token(pe_symbol)
+
+        print("CE Token:", ce_token)
+        print("PE Token:", pe_token)
 
 
-        Commodity_Symbol_PE = f"{Commodity_Selection}{next_expiry.strftime("%d%b%y").upper()}{ATM-50}PE"
-        def get_option_token(symbol):
-            row = Angel_DF.instruments[Angel_DF.instruments["symbol"] == symbol]
-            if row.empty:
-                raise Exception(f"Token not found for {symbol}")
-            return row.iloc[0]["token"]
-        Commodity_token_PE = get_option_token(Commodity_Symbol_PE)
-        st.write(f"{Symbol} " " Token Is:", Commodity_token_PE)
 
-
-        
         def fetch_5min_candles(token):
             to_date = datetime.now()
             from_date = to_date - timedelta(days=3)
 
             response = Angel.smartApi.getCandleData({
-                "exchange": "MCX",
+                "exchange": "NFO",
                 "symboltoken": token,
                 "interval": "THREE_MINUTE",
                 "fromdate": from_date.strftime("%Y-%m-%d %H:%M"),
@@ -633,14 +616,11 @@ def app():
             df.dropna(inplace=True)
             return df
 
-        ce_df = fetch_5min_candles(Commodity_token_CE)
-        pe_df = fetch_5min_candles(Commodity_token_PE)
+        ce_df = fetch_5min_candles(ce_token)
+        pe_df = fetch_5min_candles(pe_token)
+
         ce_df = apply_indicators(ce_df)
         pe_df = apply_indicators(pe_df)
-
-
-
-
 
         
         
@@ -651,6 +631,12 @@ def app():
         # ---- Display in columns ----
         with col1:
             NIFTY1 = ce_df.tail(Candle_Length)
+            NIFTY1 = NIFTY1.reset_index()
+            # Ensure datetime
+            NIFTY1["Datetime"] = pd.to_datetime(NIFTY1["Datetime"])
+            # Pre-format datetime for hover (candlestick limitation)
+            dt_text = NIFTY1["Datetime"].dt.strftime("%Y-%m-%d %H:%M")
+
 
 
             import numpy as np
@@ -681,14 +667,13 @@ def app():
 
             ENTRY_START = dt_time(9, 45)
             ENTRY_END   = dt_time(13, 0)
-            EXIT_TIME   = dt_time(23, 0)
+            EXIT_TIME   = dt_time(15, 0)
 
             in_trade = False
             sell_price = None
 
             for i in range(len(NIFTY1)):
-
-                idx   = NIFTY1.index[i]
+                idx   = NIFTY1['Datetime'][i]
                 tm    = idx.time()
                 price = NIFTY1["EMA14"].iloc[i]
                 rsi   = NIFTY1["RSI"].iloc[i]
@@ -749,7 +734,7 @@ def app():
 
             #st.write(NIFTY1)
             # ---------------- PLOTLY CHART ----------------            
-            st.subheader(f"📈 {Commodity_Symbol_CE} "  " Candle + RSI", divider="rainbow")
+            st.subheader(f"📈 {ce_symbol} "  " Candle + RSI", divider="rainbow")
 
             fig1 = make_subplots(
             rows=2,
@@ -762,27 +747,49 @@ def app():
 
             # -------- Candlestick --------
             fig1.add_trace(
-            go.Candlestick(
-                x=NIFTY1.index,
-                open=NIFTY1["Open"],
-                high=NIFTY1["High"],
-                low=NIFTY1["Low"],
-                close=NIFTY1["Close"],
-                name="Price"
-            ),
-            row=1, col=1
+                go.Candlestick(
+                    x=NIFTY1.index,  # ✅ index-based x-axis
+
+                    open=NIFTY1["Open"],
+                    high=NIFTY1["High"],
+                    low=NIFTY1["Low"],
+                    close=NIFTY1["Close"],
+
+                    name="Price",
+
+                    hoverinfo="text",
+                    hovertext=[
+                        f"<b>Date:</b> {d}<br>"
+                        f"<b>Open:</b> {o}<br>"
+                        f"<b>High:</b> {h}<br>"
+                        f"<b>Low:</b> {l}<br>"
+                        f"<b>Close:</b> {c}"
+                        for d, o, h, l, c in zip(
+                            dt_text,
+                            NIFTY1["Open"],
+                            NIFTY1["High"],
+                            NIFTY1["Low"],
+                            NIFTY1["Close"]
+                        )
+                    ]
+                ),
+                row=1, col=1
             )
 
-            # -------- EMA14 --------
+            # ---------- EMA14 ----------
             fig1.add_trace(
-            go.Scatter(
-                x=NIFTY1.index,
-                y=NIFTY1["EMA14"],
-                mode="lines",
-                line=dict(color="cyan", width=2),
-                name="EMA14"
-            ),
-            row=1, col=1
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["EMA14"],
+                    name="EMA14",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>EMA14:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="cyan", width=2)
+                ),
+                row=1, col=1
             )
 
             # -------- VWAP --------
@@ -823,14 +830,18 @@ def app():
 
             # -------- RSI --------
             fig1.add_trace(
-            go.Scatter(
-                x=NIFTY1.index,
-                y=NIFTY1["RSI"],
-                mode="lines",
-                line=dict(color="orange", width=2),
-                name="RSI"
-            ),
-            row=2, col=1
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["RSI"],
+                    name="RSI",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>RSI:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="orange", width=2)
+                ),
+                row=2, col=1
             )
 
             # Profit exits
@@ -874,14 +885,14 @@ def app():
 
             st.subheader("📖 Trade Book Details :")
 
-            NIFTY1 = pd.read_csv('CE_Trades.csv')
+            NIFTY1 = pd.read_csv('CE_Trades.csv')            
             NIFTY2 = NIFTY1[(NIFTY1['entry_price'] > 0) | (NIFTY1['exit_price'] > 0)]
 
             if len(NIFTY2) < 1 :
                 st.write('No Trade Initiated Yet...')
 
-            else:
-                NIFTY2 = NIFTY2[['Datetime','Close','EMA14','RSI','VWAP','entry_price','exit_price','exit_reason','pnl']]
+            else:                
+                NIFTY2 = NIFTY2[['Unnamed: 0','entry_price','exit_price','exit_reason','pnl']]
                 st.write(NIFTY2)
 
                 Lots = 1*75
@@ -897,7 +908,7 @@ def app():
                 st.write(f"Total Income(Rs/-) : {round(total_Income,2)}")
                 st.subheader("📖 Trade Book Trades")
 
-                Trade = Trade[['Datetime','Close','EMA14','RSI','VWAP','entry_price','exit_price','exit_reason','pnl']]
+                Trade = Trade[['Unnamed: 0','entry_price','exit_price','exit_reason','pnl']]
                 st.write(Trade)
 
 
@@ -905,6 +916,12 @@ def app():
             # ---- Display in columns ----
         with col2:
             NIFTY1 = pe_df.tail(Candle_Length)
+            NIFTY1 = NIFTY1.reset_index()
+            
+            # Ensure datetime
+            NIFTY1["Datetime"] = pd.to_datetime(NIFTY1["Datetime"])
+            # Pre-format datetime for hover (candlestick limitation)
+            dt_text = NIFTY1["Datetime"].dt.strftime("%Y-%m-%d %H:%M")
 
 
             import numpy as np
@@ -935,14 +952,14 @@ def app():
 
             ENTRY_START = dt_time(9, 45)
             ENTRY_END   = dt_time(13, 0)
-            EXIT_TIME   = dt_time(23, 0)
+            EXIT_TIME   = dt_time(15, 0)
 
             in_trade = False
             sell_price = None
 
             for i in range(len(NIFTY1)):
 
-                idx   = NIFTY1.index[i]
+                idx   = NIFTY1['Datetime'][i]
                 tm    = idx.time()
                 price = NIFTY1["EMA14"].iloc[i]
                 rsi   = NIFTY1["RSI"].iloc[i]
@@ -1003,7 +1020,7 @@ def app():
 
             #st.write(NIFTY1)
             # ---------------- PLOTLY CHART ----------------            
-            st.subheader(f"📈 {Commodity_Symbol_PE} "  " Candle + RSI", divider="rainbow")
+            st.subheader(f"📈 {pe_symbol} "  " Candle + RSI", divider="rainbow")
 
             fig1 = make_subplots(
             rows=2,
@@ -1016,27 +1033,49 @@ def app():
 
             # -------- Candlestick --------
             fig1.add_trace(
-            go.Candlestick(
-                x=NIFTY1.index,
-                open=NIFTY1["Open"],
-                high=NIFTY1["High"],
-                low=NIFTY1["Low"],
-                close=NIFTY1["Close"],
-                name="Price"
-            ),
-            row=1, col=1
+                go.Candlestick(
+                    x=NIFTY1.index,  # ✅ index-based x-axis
+
+                    open=NIFTY1["Open"],
+                    high=NIFTY1["High"],
+                    low=NIFTY1["Low"],
+                    close=NIFTY1["Close"],
+
+                    name="Price",
+
+                    hoverinfo="text",
+                    hovertext=[
+                        f"<b>Date:</b> {d}<br>"
+                        f"<b>Open:</b> {o}<br>"
+                        f"<b>High:</b> {h}<br>"
+                        f"<b>Low:</b> {l}<br>"
+                        f"<b>Close:</b> {c}"
+                        for d, o, h, l, c in zip(
+                            dt_text,
+                            NIFTY1["Open"],
+                            NIFTY1["High"],
+                            NIFTY1["Low"],
+                            NIFTY1["Close"]
+                        )
+                    ]
+                ),
+                row=1, col=1
             )
 
             # -------- EMA14 --------
             fig1.add_trace(
-            go.Scatter(
-                x=NIFTY1.index,
-                y=NIFTY1["EMA14"],
-                mode="lines",
-                line=dict(color="cyan", width=2),
-                name="EMA14"
-            ),
-            row=1, col=1
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["EMA14"],
+                    name="EMA14",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>EMA14:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="cyan", width=2)
+                ),
+                row=1, col=1
             )
 
             # -------- VWAP --------
@@ -1077,14 +1116,18 @@ def app():
 
             # -------- RSI --------
             fig1.add_trace(
-            go.Scatter(
-                x=NIFTY1.index,
-                y=NIFTY1["RSI"],
-                mode="lines",
-                line=dict(color="orange", width=2),
-                name="RSI"
-            ),
-            row=2, col=1
+                go.Scatter(
+                    x=NIFTY1.index,
+                    y=NIFTY1["RSI"],
+                    name="RSI",
+                    customdata=dt_text,
+                    hovertemplate=
+                        "<b>Date:</b> %{customdata}<br>"
+                        "<b>RSI:</b> %{y:.2f}<br>"
+                        "<extra></extra>",
+                    line=dict(color="orange", width=2)
+                ),
+                row=2, col=1
             )
 
             # Profit exits
@@ -1134,7 +1177,7 @@ def app():
                 st.write('No Trade Initiated Yet...')
 
             else:
-                NIFTY2 = NIFTY2[['Datetime','Close','EMA14','RSI','VWAP','entry_price','exit_price','exit_reason','pnl']]
+                NIFTY2 = NIFTY2[['Unnamed: 0','entry_price','exit_price','exit_reason','pnl']]
                 st.write(NIFTY2)
 
                 Lots = 1*75
@@ -1150,13 +1193,5 @@ def app():
                 st.write(f"Total Income(Rs/-) : {round(total_Income,2)}")
                 st.subheader("📖 Trade Book Trades")
 
-                Trade = Trade[['Datetime','Close','EMA14','RSI','VWAP','entry_price','exit_price','exit_reason','pnl']]
+                Trade = Trade[['Unnamed: 0','entry_price','exit_price','exit_reason','pnl']]
                 st.write(Trade)
-
-
-
-
-
-
-        
-        
